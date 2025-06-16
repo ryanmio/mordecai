@@ -11,3 +11,9 @@ mordecai/.cache
 build/
 dist/
 mordecai.egg-info
+/.venv
+/.venv_m3
+/geonames_index
+/geonames_index_old
+*.csv
+*.gz

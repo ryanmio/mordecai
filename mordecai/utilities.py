@@ -216,18 +216,34 @@ def read_in_admin1(filepath):
 
 
 def structure_results(res):
-    """Format Elasticsearch result as Python dictionary"""
+    """Format Elasticsearch result as Python dictionary
+
+    Prior versions of the pre-built GeoNames index shipped with slightly
+    different field names.  Some (like ``country_code2``) are missing in
+    newer snapshots built for Elasticsearch 7+.  To stay robust across
+    these variations we now copy only the fields that are present rather
+    than crashing with ``KeyError`` when one is absent.
+    """
+
     out = {'hits': {'hits': []}}
-    keys = ['admin1_code', 'admin2_code', 'admin3_code', 'admin4_code',
-            'alternativenames', 'asciiname',  'coordinates',
-            'country_code2', 'country_code3', 
-            'feature_class', 'feature_code', 'geonameid',
-            'modification_date', 'name', 'population']
+
+    desired_keys = {
+        'admin1_code', 'admin2_code', 'admin3_code', 'admin4_code',
+        'alternativenames', 'asciiname', 'coordinates',
+        'country_code2', 'country_code3',
+        'feature_class', 'feature_code', 'geonameid',
+        'modification_date', 'name', 'population'
+    }
+
     for i in res:
-        i_out = {}
-        for k in keys:
-            i_out[k] = i[k]
+        # ElasticSearch-dsl Hit acts like an object; convert to dict first
+        if hasattr(i, 'to_dict'):
+            src = i.to_dict()
+        else:
+            src = dict(i)
+        i_out = {k: src.get(k) for k in desired_keys if k in src}
         out['hits']['hits'].append(i_out)
+
     return out
 
 def setup_es(hosts, port, use_ssl=False, auth=None):

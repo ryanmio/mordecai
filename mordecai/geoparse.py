@@ -365,6 +365,11 @@ https://github.com/openeventdata/mordecai/ for instructions on updating.""".form
         ------
         out: dict, the structured geonames results
         """
+        # Ensure country is plain string (not NumPy scalar/array) for Elasticsearch term filter
+        if not isinstance(country, str):
+            # numpy array like array(['USA'], dtype='<U3')
+            country = str(country[0]) if hasattr(country, '__getitem__') else str(country)
+
         # first, try for an exact phrase match
         q = {"multi_match": {"query": placename,
                              "fields": ['name^5', 'asciiname^5', 'alternativenames'],
@@ -723,7 +728,17 @@ https://github.com/openeventdata/mordecai/ for instructions on updating.""".form
             for n, i in enumerate(feat_list):
                 labels = i['labels']
                 try:
-                    prediction = self.country_model.predict(i['matrix']).transpose()[0]
+                    # Keras 3.x expects 3-D input (batch, timesteps, features). If the
+                    # stored matrix is 2-D (timesteps, features), add a batch axis so the
+                    # shape becomes (1, timesteps, features).
+                    mat = np.asarray(i['matrix'])
+                    if len(mat.shape) == 1:
+                        # (features,) → (1,1,features)
+                        mat = mat[np.newaxis, np.newaxis, :]
+                    elif len(mat.shape) == 2:
+                        # (timesteps, features) → (1, timesteps, features)
+                        mat = mat[np.newaxis, :, :]
+                    prediction = self.country_model.predict(mat).transpose()[0]
                     ranks = prediction.argsort()[::-1]
                     labels = np.asarray(labels)[ranks]
                     prediction = prediction[ranks]
