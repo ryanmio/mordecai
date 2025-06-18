@@ -43,11 +43,26 @@ def main() -> None:
     # Load predictions
     pred_coords = {}
     with predictions_file.open(newline="") as f:
-        for row in csv.DictReader(f):
+        reader = csv.DictReader(f)
+        
+        # Auto-detect coordinate column names
+        fieldnames = reader.fieldnames or []
+        lat_col = lon_col = None
+        
+        for field in fieldnames:
+            if field.endswith('_lat'):
+                lat_col = field
+            elif field.endswith('_lon'):
+                lon_col = field
+        
+        if not lat_col or not lon_col:
+            sys.exit(f"Could not find coordinate columns (*_lat, *_lon) in {predictions_file}")
+        
+        for row in reader:
             sid = row["subject_id"]
             try:
-                lat = float(row["mordecai_lat"])
-                lon = float(row["mordecai_lon"])
+                lat = float(row[lat_col])
+                lon = float(row[lon_col])
                 pred_coords[sid] = (lat, lon)
             except (ValueError, KeyError):
                 continue
