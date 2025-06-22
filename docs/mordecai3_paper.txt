@@ -1,0 +1,705 @@
+Mordecai 3: A Neural Geoparser and Event Geocoder
+
+Andrew Halterman
+Department of Political Science
+Michigan State University
+ahalterman0@gmail.com
+
+3
+2
+0
+2
+
+r
+a
+
+M
+3
+2
+
+]
+L
+C
+.
+s
+c
+[
+
+1
+v
+5
+7
+6
+3
+1
+.
+3
+0
+3
+2
+:
+v
+i
+X
+r
+a
+
+Abstract
+
+Mordecai3 is a new end-to-end text geoparser
+and event geolocation system. The system per-
+forms toponym resolution using a new neu-
+ral ranking model to resolve a place name ex-
+tracted from a document to its entry in the
+Geonames gazetteer.
+It also performs event
+geocoding, the process of linking events re-
+ported in text with the place names where they
+are reported to occur, using an off-the-shelf
+question-answering model. The toponym res-
+olution model is trained on a diverse set of ex-
+isting training data, along with several thou-
+sand newly annotated examples. The paper
+describes the model, its training process, and
+performance comparisons with existing geop-
+arsers. The system is available as an open
+source Python library, Mordecai 3, and re-
+places an earlier geoparser, Mordecai v2, one
+of the most widely used text geoparsers (Hal-
+terman, 2017).
+
+1
+
+Introduction
+
+Text geoparsing, the process of identifying place
+names in text and resolving them to their entry in
+a geographic gazetteer, is a key step in making
+text data useful for researchers, especially in so-
+cial science. This paper introduces a new Python
+library for geoparsing documents. Speciﬁcally, it
+uses spaCy’s named entity recognition system to
+identify place names in text and queries the Geon-
+ames gazetteer (Wick and Boutreux, 2011) in a
+custom Elasticsearch index for candidate matches.
+The core novelty of the library is a new model
+that uses a new neural similarity model to select
+the best match from the candidate locations. The
+model is trained on a large set of existing and newly
+annotated text with correct geolocations.
+
+The geoparser also performs event geolocation
+(Halterman, 2019), the process of linking an event
+in text to the location where it is reported to oc-
+
+1
+
+cur. To do so, it uses an off-the-shelf question-
+answering model to select which location, among
+potentially several in the text, corresponds to the
+location where the event was reported to occur.
+
+The library performs well on both new and ex-
+isting geoparsing datasets, with an country-level
+accuracy of 94.2% and an exact match accuracy of
+82.8%. 1
+
+2 Previous Work
+
+The existing work on geoparsing has identiﬁed a
+set of useful heuristics, including population as
+a strong baseline (Leidner, 2008), a “spatial min-
+imality” that selects candidate locations that are
+closest in space (Leidner, 2017), a “one meaning
+per document” heuristic that all mentions of a place
+name refer to the same location, and the number
+of alternative names in the gazetteer as a proxy for
+importance (Halterman, 2017; Karimzadeh et al.,
+2019). Other work has used static word embed-
+dings to infer the likely country for a place name
+and other heuristics (Halterman, 2017). Current
+state-of-the-art models employ string similarity be-
+tween a place name and candidate entries in the
+gazeetter, along with contextual information from
+the broader document (Wang et al., 2019). This
+model draws on much of this work, employing
+string similarity methods, the length of alternative
+names in Geonames, and the document’s contex-
+tual information in the form of transformer-based
+word embeddings.
+
+3 Data
+
+As training data, I draw on several existing datasets
+of resolved toponyms:
+
+• GeoWebNews (Gritta et al., 2019), 6,612 to-
+ponyms, ﬁltered down to 2,401 that report a
+
+1The library is available here: https://github.
+
+com/ahalterman/mordecai3/.
+
+ 
+ 
+ 
+ 
+ 
+ 
+Figure 1: High-level overview of Mordecai 3’s ranking model. Neural similarity comparisons are in green. Pink
+values are calculated using other place names in the text. Blue values are produced by comparing the original query
+to the Geonames gazetteer results.
+
+Geonames ID.
+
+– See if the Wikidata page has a Geonames
+
+• TR News (1,275 toponyms with Geonames
+
+IDs) (Kamalloo and Raﬁei, 2018).
+
+• Local Global Corpus (LGL), which has
+includes primarily US local news stories
+(Lieberman et al., 2010)
+
+Two other
+
+common geoparsing datasets,
+GeoVirus (Gritta et al., 2018) and WikiTor
+(Gritta et al., 2017), provide links to Wikipedia
+pages but not Geonames, and thus are not used.
+
+It also uses the following newly collected data:
+
+• Newly annotated data from news wire and
+
+newspaper stories (N=1,671)
+
+• Synthetic data generated with a rule-based sys-
+tem that focuses on hierarchical place names
+(for example, capital of country, city in state,
+etc.) (N=944)
+
+• New Wikipedia-derived data. I obtain train-
+ing data by exporting articles from certain
+Wikipedia categories (battles, protests, etc),
+and then:
+
+– Running NER on the article. If a named
+entity lines up with an internal Wiki page
+link, then:
+
+– Follow the link to the Wikipedia page.
+Get that page’s Wikidata ID, and then:
+
+ID
+
+I create a random train/validation set of data
+from all sources to ﬁt and evaluate the model. I also
+add impossible cases, where the correct entry is
+removed from the candidate locations, to simulate
+real-world situations where the location may not
+be present in the search results.
+
+4 Model
+
+The geoparsing process consists of the following
+steps:
+
+1. Identify all place names (toponyms) in a docu-
+ment using spaCy’s named entity recognition
+model. (Honnibal and Montani, 2017).2
+Then, for each extracted place name, it
+
+2. Queries the Geonames gazetteer of place-
+names (Wick and Boutreux, 2011) hosted in
+a custom Elasticsearch instance with the ex-
+tracted placename to identify a set of candi-
+date entries in the gazetteer. The query uses
+fuzzy search over both the primary place name
+in Geonames and the list of alternative names.
+
+3. Ranks the set of candidate entries using a
+neural model that uses similarity features
+
+2Currently, it uses spaCy v3.4.3 and spaCy’s transformer-
+
+based en core web trf v3.4.1.
+
+2
+
+Dataset Eval N Exact Mean Error Median
+
+Training
+prodigy
+TR
+GWN
+Synth
+Wiki
+
+6673
+500
+273
+477
+300
+356
+
+Match (km)
+83.1% 388.3
+90.4% 65.4
+81.0% 733.9
+91.2% 93.4
+96.7% 133.6
+80.6% 180.4
+
+Err. (km) Country Type
+86.4%
+92.2%
+0.0
+91.0%
+97.0%
+0.0
+85.0%
+89.7%
+0.0
+91.6%
+95.8%
+0.0
+99.3%
+97.7%
+0.0
+82.0%
+93.0%
+0.0
+
+Correct Correct Correct Acc@
+161km
+88.8
+98.5
+82.8
+96.0
+97.3
+95.0
+
+ADM1
+86.9%
+95.6%
+82.8%
+93.9%
+97.0%
+89.9%
+
+Table 1: Accuracy ﬁgures for Mordecai 3 on new and existing datasets.
+
+and features derived from the place names
+in the gazetteer again. Figure 1 provides an
+overview.
+
+4. Optionally, if used alongside an event data
+identiﬁes the location in a docu-
+system,
+ment where an event is most likely to have
+occurred, using an off-the-shelf extractive
+question-answering model.
+
+The model uses a set of similarity measures to
+select the best location out of the candidate loca-
+tions.
+
+First, it uses it computes several neural text sim-
+ilarity measures (shown in green in Figure 1) to
+address the problem of ambiguous place names.
+It computes several similarities to infer the likely
+country for a location. Speciﬁcally, it learns a cus-
+tom embedding for each country and computes the
+similarity between that embedding and the (aver-
+age) spaCy transformer emebddings for the place
+name of interest, the other place names in the
+text, and the document as a whole. The spaCy
+transformer embeddings, from spaCy’s ﬁne-tuned
+RoBERTa model, we get “for free” from the previ-
+ous NER step. By using the embeddings, we can
+draw on contextual clues about the likely country
+discussed in a piece of text. It does a similar pro-
+cess for inferring the geographic type of the place
+name (e.g., city, administrative area). This helps
+use contextual information to differentiate cities
+and administrative regions with the same name.
+
+It then also draws on string similarity between
+the query location and each of the candidate lo-
+cations returned by Geonames (shown in blue in
+Figure 1). These include the minimum and aver-
+age edit distance between the query and the set of
+names for each candidate location.
+
+Finally, it uses information from all locations
+identiﬁed in a document to help resolve each of
+them. For each candidate location, it identiﬁes
+
+whether other locations in the document have a hi-
+erarchical relationship (e.g., neighborhood within
+city, city with administrative area) (Karimzadeh
+et al., 2019) and whether a candidate location
+shares a country with candidate locations for other
+place names in the text.
+
+Finally, all of these features are concatenated
+into a vector and passed through a dense layer.
+Each candidate location is given a [0, 1] score, and
+these are softmaxed over all candidate locations to
+generate a single score. The model also has the
+option of selecting a null candidate, to handle situ-
+ations where the place name may not have an entry
+in the gazetteer or where the earlier search step
+failed to identify the true location.
+
+The model is similar to DM NLP, the current
+state-of-the-art model (Wang et al., 2019), which
+uses string similarity measures and incorporates
+document context. However, this model differs in
+that it does not require contextual information from
+Wikipedia and uses document context in the form
+of RoBERTa-based contextual embeddings, rather
+than a bag-of-words model.
+
+Note that the model does not ﬁne-tune the trans-
+former weights directly. Instead, it learns dense
+layers on top of the static spaCy embeddings. I do
+this for several reasons. First, ﬁne-tuning the em-
+beddings would require either a second transformer
+model or would risk major degradation of spaCy’s
+NER performance as the model as the transformer
+weights were updated to perform well on non-NER
+tasks. Adding a second transformer model would
+greatly increase the computational cost and time
+needed to geoparse documents. Second, by not ﬁne-
+tuning the weights, I ensure that the model is not
+overﬁt to the text and locations that are present in
+the training data. The model is intended to perform
+well on many kinds of text from all regions of the
+world, and learning location-speciﬁc features could
+degrade this performance. This decision stands
+
+3
+
+Dataset % missing@50 % missing@500
+training
+New data
+TR
+LGL
+GWN
+Synth
+Wiki
+
+5.9%
+0.4%
+8.1%
+5.9%
+4.5%
+1.0%
+5.9%
+
+3.8%
+0.0%
+1.1%
+3.4%
+2.9%
+0.3%
+5.1%
+
+Table 2: Evaluation of the query step. Percentage of
+queries without the correct answer in either the top 50
+or 500 results from Elasticsearch.
+
+in contrast to some existing approaches, for ex-
+ample, the CamCoder model introduced by Gritta
+et al. (2018), which learns that terms like “pyramid
+complex” and “archeological site” are predictive
+of Giza, Egypt. Similarly, Speriosu and Baldridge
+(2013) train a classiﬁer for each place name, using
+document context to predict each place name’s cor-
+rect geolocation. Both of these are limited in their
+applicability to places outside the training corpus.
+In ﬁtting the model, I experiment with several
+hyperparameters, including the batch size, dropout
+value, learning rate, and the country and feature-
+type embedding dimension. I also experiment with
+a gradient accumulation step and a multi-task out-
+put that attempts to predict the place name’s coun-
+try using the contextualized embeddings. The hy-
+perparameters with the greatest improvement in ac-
+curacy were the epochs (= 15), batch size (= 60),
+dropout (= 0.3), and the learning rate (= 0.4).
+
+5 Results and Evaluation
+
+The ﬁrst evaluation I conduct is the ability of the
+Elaticsearch query to correctly retrieve the correct
+location from the Geonames index. If the correct
+location is not retrieved, then the model will not
+be able to identify it. Table 2 shows the percent-
+age of correct locations that are not in the top 50
+and 500 results, respectively, for each dataset. The
+correct location is located in the top 500 results in
+almost all cases. Some penalty is paid for restrict-
+ing the query to the top 50 locations, but the speed
+improvements could make this a useful tradeoff in
+some situations.
+
+Gritta et al. (2019) offer a detailed discussion
+of how to evaluate geoparsers and argue for an ap-
+proach to evaluating geoparsing that focuses on
+three metrics: the AUC of the model, the percent-
+age of results that are within 161 km (100 miles)
+
+4
+
+of the true location, and the mean error. Table Ta-
+ble 1 presents mean distance and percent within
+161 km, but also reports several other metrics that
+are important for end users. Speciﬁcally, it also
+reports the exact match percentage. While Gritta
+et al. (2019) are correct to point out that the distance
+between the predicted and true location is an impor-
+tant factor in evaluating geoparsers, it is also true
+that errors of any magnitude are can cause prob-
+lems in certain applications. I also report the pro-
+portion of locations that are resolved to the correct
+country, top-level administrative area (e.g. state
+or province), and to the correct feature type (e.g.
+settlement vs. administrative area). The model per-
+forms well on most metrics and datasets. It has
+an average country-level accuracy of 94.2% and
+an average exact match accuracy of 82.8%. For
+all datasets, the median error is 0 km, but the high
+mean error indicates that some incorrectly geolo-
+cated places are resolved to locations that are very
+far away. It performs very well on the synthetic
+data, which samples locations and adds them to
+simple sentence templates. This text is not repre-
+sentative of real-world text, however. It performs
+worst on the LGL corpus, which heavily samples
+local US news. Many of the stories refer to am-
+biguous place names (e.g., the classic “Springﬁeld”
+example) and are written for local audiences with
+assumed knowledge of the area being described.
+
+Table 3 reproduces a table from Gritta et al.
+(2019), which compares several existing geop-
+arser’s performance on the GWN corpus (Gritta
+et al., 2019), and adds the performance for Morde-
+cai3 trained on all data except GWN. It shows com-
+petitive performance, with the lowest mean error
+and an accuracy@161 km that is within one point
+
+Geoparser
+
+SpacyNLP + CamCoder
+SpacyNLP + Population
+Oracle NER + CamCoder
+Oracle NER + Population
+Yahoo Placemaker
+Edinburgh Geoparser
+Mordecai3
+
+Mean Acc@
+161km
+Error
+95
+188
+95
+210
+94
+232
+94
+250
+91
+203
+91
+338
+184
+94
+
+Table 3: A reproduction of Table 4 from Gritta et al.
+(2019), comparing geoparser’s performance on the
+GWN corpus with values for Mordecai (not trained on
+GWN) added.
+
+Dataset Missingness correctly Percentage
+
+training
+New data
+TR
+LGL
+GWN
+Synth
+Wiki
+
+identiﬁed
+70.3%
+100.0%
+66.7%
+40.0%
+54.7%
+97.4%
+55.9%
+
+Missing
+10.8%
+7.0%
+2.2%
+5.2%
+5.5%
+12.7%
+9.6%
+
+Table 4: The model’s ability to identify when the cor-
+rect place name is not present in the candidate loca-
+tions.
+
+of the best models.
+
+Finally, I evaluate the model’s ability to handle
+instances where the correct location is not present
+in the candidate locations returned by the query
+step. In most applied situations, incorrectly geolo-
+cating a place name is a worse error than failing to
+geolocate a place name that could have been geolo-
+cated. Table 4 shows the proportion of “impossible”
+choices (i.e., instances where the correct location
+is not present in the candidate locations returned
+in the query step) that the neural ranking model
+correctly identiﬁes as unanswerable. The model
+shows wide variance across datasets, ranging from
+40% to 100% accuracy in abstaining from picking
+a location. Training on more instances where the
+correct location has been manually removed from
+the candidate locations could improve the model’s
+ability to abstain from impossible geolocations.
+
+6 Conclusion and Future Work
+
+Two areas of future work could improve the perfor-
+mance of the model. First, more training data could
+improve the performance of the model. This data
+can be efﬁciently obtained in two ways. First, us-
+ing the process I outline above, more training data
+can easily be obtained from Wikipedia. To ensure
+that the model remains general to other text, more
+human annotations can also be collected. Using the
+Geonames query portion of the library, candidate
+geolocations can be shown to annotators, who can
+select the correct one, lowering the cost of collect-
+ing more hand annotations.
+
+Second, the model itself could be improved. As
+discussed above, the transformer models them-
+selves are not ﬁne-tuned, which limits the ability of
+the model to incorporate contextual clues about the
+correct location. Training a second model to predict
+
+the geographic coordinates of the location using
+only the context of the story, as Radford (2021)
+suggests, could help select the correct location or
+better estimate when none of the candidate loca-
+tions are correct and the model should return no
+correct geolocation at all.
+
+7 Acknowledgements
+
+This work was sponsored by the Political Instabil-
+ity Task Force (PITF). The PITF is funded by the
+Central Intelligence Agency. The views expressed
+in this article are the author’s alone and do not
+represent the views of the US Government.
+
+References
+
+Gritta, M., M. Pilehvar, and N. Collier (2018). Which
+Melbourne? augmenting geocoding with maps.
+
+Gritta, M., M. T. Pilehvar, and N. Collier (2019). A
+Lan-
+
+pragmatic guide to geoparsing evaluation.
+guage resources and evaluation, 1–30.
+
+Gritta, M., M. T. Pilehvar, N. Limsopatham, and
+N. Collier (2017). What’s missing in geographical
+parsing? Language Resources and Evaluation, 1–
+21.
+
+Halterman, A. (2017, Jan). Mordecai: Full text geop-
+arsing and event geocoding. The Journal of Open
+Source Software 2(9).
+
+Halterman, A. (2019). Geolocating political events in
+text. In Proceedings of the Third Workshop on Natu-
+ral Language Processing and Computational Social
+Science, 17th Annual Conference of the North Amer-
+ican Chapter of the Association for Computational
+Linguistics (NAACL), pp. 29–39.
+
+Honnibal, M. and I. Montani (2017). spacy 2: Natu-
+ral language understanding with bloom embeddings,
+convolutional neural networks and incremental pars-
+ing. To appear.
+
+Kamalloo, E. and D. Raﬁei (2018). A coherent unsu-
+pervised model for toponym resolution. In Proceed-
+ings of the 2018 World Wide Web Conference, pp.
+1287–1296.
+
+Karimzadeh, M., S. Pezanowski, A. M. MacEachren,
+and J. O. Wallgr¨un (2019). Geotxt: A scalable
+geoparsing system for unstructured text geolocation.
+Transactions in GIS 23(1), 118–136.
+
+Leidner, J. L. (2008).
+
+Toponym resolution in text:
+Annotation, evaluation and applications of spatial
+grounding of place names. Universal-Publishers.
+
+Leidner, J. L. (2017). Georeferencing: From texts to
+maps. The International Encyclopedia of Geogra-
+phy.
+
+5
+
+Lieberman, M. D., H. Samet, and J. Sankaranarayanan
+(2010). Geotagging with local lexicons to build in-
+In Data
+dexes for textually-speciﬁed spatial data.
+Engineering (ICDE), 2010 IEEE 26th International
+Conference on, pp. 201–212. IEEE.
+
+Radford, B. J.
+
+(2021).
+
+text for probabilistic geocoding.
+arXiv:2107.00080.
+
+Regressing location on
+arXiv preprint
+
+Speriosu, M. and J. Baldridge (2013). Text-driven
+toponym resolution using indirect supervision.
+In
+ACL, pp. 1466–1476.
+
+Wang, X., C. Ma, H. Zheng, C. Liu, P. Xie, L. Li, and
+L. Si (2019). Dm nlp at semeval-2018 task 12: A
+pipeline system for toponym resolution. In Proceed-
+ings of the 13th International Workshop on Semantic
+Evaluation, pp. 917–923.
+
+Wick, M. and C. Boutreux (2011). Geonames. GeoN-
+
+ames Geographical Database.
+
+6
+
+

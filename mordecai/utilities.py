@@ -230,8 +230,8 @@ def structure_results(res):
     desired_keys = {
         'admin1_code', 'admin2_code', 'admin3_code', 'admin4_code',
         'alternativenames', 'asciiname', 'coordinates',
-        'country_code2', 'country_code3',
-        'feature_class', 'feature_code', 'geonameid',
+            'country_code2', 'country_code3', 
+            'feature_class', 'feature_code', 'geonameid',
         'modification_date', 'name', 'population'
     }
 
